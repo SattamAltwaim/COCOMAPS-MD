@@ -1,0 +1,137 @@
+#!/usr/bin/env python3
+"""
+Cross-platform wrapper that runs coco-md inside Docker.
+
+Handles relative paths, absolute paths, and interactive mode on
+Windows, Linux, and macOS.
+
+Install:
+  # Linux / macOS — place onto PATH
+  sudo curl -fsSL https://raw.githubusercontent.com/sattamaltwaim/COCOMAPS-MD/master/coco-md -o /usr/local/bin/coco-md
+  sudo chmod +x /usr/local/bin/coco-md
+
+  # Windows (from an admin prompt)
+  Invoke-WebRequest -Uri "https://raw.githubusercontent.com/sattamaltwaim/COCOMAPS-MD/master/coco-md" -OutFile "$env:USERPROFILE\bin\coco-md.py"
+"""
+
+import datetime
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+IMAGE = "sattamaltwaim/cocomaps-md-cli"
+PLATFORM = "linux/amd64"
+STALE_DAYS = 30
+
+_PATH_FLAGS = {"-o", "--output", "-p", "--params"}
+
+
+def _resolve(raw: str) -> Path:
+    return Path(raw).resolve()
+
+
+def _update():
+    """Pull the latest image and exit."""
+    print(f"Updating {IMAGE} …")
+    sys.exit(subprocess.call(["docker", "pull", "--platform", PLATFORM, IMAGE]))
+
+
+def _image_age_days() -> int | None:
+    """Return how many days ago the local image was pulled, or None if not present."""
+    result = subprocess.run(
+        ["docker", "image", "inspect", IMAGE, "--format", "{{.Created}}"],
+        capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        return None
+    try:
+        created_str = result.stdout.strip()[:19]
+        created = datetime.datetime.fromisoformat(created_str)
+        return (datetime.datetime.utcnow() - created).days
+    except Exception:
+        return None
+
+
+def main():
+    args = sys.argv[1:]
+
+    # Handle --update / update before anything else
+    if args and args[0] in ("--update", "update"):
+        _update()
+
+    mounts: dict[str, str] = {}
+    rewritten: list[str] = []
+    cwd = Path.cwd().resolve()
+
+    mounts[str(cwd)] = "/data/cwd"
+
+    mount_counter = 0
+
+    def add_mount(host_path: Path) -> str:
+        nonlocal mount_counter
+        parent = str(host_path.parent)
+        if parent not in mounts:
+            mount_counter += 1
+            mounts[parent] = f"/data/m{mount_counter}"
+        return mounts[parent] + "/" + host_path.name
+
+    i = 0
+    positional_seen = False
+    while i < len(args):
+        arg = args[i]
+
+        if arg in _PATH_FLAGS and i + 1 < len(args):
+            rewritten.append(arg)
+            i += 1
+            host = _resolve(args[i])
+            if arg in ("-o", "--output"):
+                host.mkdir(parents=True, exist_ok=True)
+                container_path = add_mount(host)
+            else:
+                container_path = add_mount(host)
+            rewritten.append(container_path)
+
+        elif not arg.startswith("-") and not positional_seen:
+            positional_seen = True
+            host = _resolve(arg)
+            if not host.exists():
+                print(f"Error: file not found: {arg}", file=sys.stderr)
+                sys.exit(1)
+            rewritten.append(add_mount(host))
+
+        else:
+            rewritten.append(arg)
+
+        i += 1
+
+    tty_flags = ["-it"] if sys.stdin.isatty() else []
+    cmd = [
+        "docker", "run", "--rm", *tty_flags,
+        "--platform", PLATFORM,
+        "-w", "/data/cwd",
+    ]
+
+    for host_dir, container_dir in mounts.items():
+        cmd += ["-v", f"{host_dir}:{container_dir}"]
+
+    cmd.append(IMAGE)
+    cmd.extend(rewritten)
+
+    exit_code = subprocess.call(cmd)
+
+    # Staleness reminder (shown after a successful run)
+    if exit_code == 0:
+        age = _image_age_days()
+        if age is not None and age >= STALE_DAYS:
+            print(
+                f"\nNote: your coco-md image is {age} days old. "
+                "Run `coco-md --update` to get the latest version.",
+                file=sys.stderr,
+            )
+
+    sys.exit(exit_code)
+
+
+if __name__ == "__main__":
+    main()

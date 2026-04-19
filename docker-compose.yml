@@ -1,0 +1,23 @@
+services:
+  backend:
+    image: sattamaltwaim/cocomaps-md-backend
+    platform: linux/amd64
+    ports:
+      - "5001:5001"
+    volumes:
+      - systems-data:/app/systems
+    environment:
+      - COCOMAPS_DEPS_DIR=/app/deps
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+
+  frontend:
+    image: sattamaltwaim/cocomaps-md-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  systems-data:
