@@ -30,8 +30,10 @@ services:
   backend:
     image: sattamaltwaim/cocomaps-md-backend
     platform: linux/amd64
-    ports:
-      - "5001:5001"
+    # Not published to the host — the frontend reaches it over the internal
+    # Compose network and proxies /api to it. Avoids host port-5001 conflicts.
+    expose:
+      - "5001"
     volumes:
       - systems-data:/app/systems
     environment:
@@ -96,17 +98,14 @@ docker compose cp backend:/app/systems ./systems-backup
 
 ### Changing ports
 
-The ports in the compose file (`"80:80"`, `"5001:5001"`) are the host-side ports. Change the left number to any available port on your server:
+Only the frontend is published to the host. `"80:80"` is the host-side port — change the left number to any available port on your server:
 
 ```yaml
 ports:
   - "8080:80"    # frontend on host port 8080
 ```
 
-```yaml
-ports:
-  - "9001:5001"  # backend API on host port 9001
-```
+The backend isn't published to the host (the frontend proxies `/api` to it over the internal Compose network), so there's no backend port to change.
 
 ### Job privacy
 

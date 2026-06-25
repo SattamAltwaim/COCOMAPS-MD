@@ -2,8 +2,10 @@ services:
   backend:
     image: sattamaltwaim/cocomaps-md-backend
     platform: linux/amd64
-    ports:
-      - "5001:5001"
+    # Not published to the host — the frontend reaches it over the internal
+    # Compose network and proxies /api to it. Avoids host port-5001 conflicts.
+    expose:
+      - "5001"
     volumes:
       - systems-data:/app/systems
     environment:
