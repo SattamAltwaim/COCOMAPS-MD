@@ -27,6 +27,14 @@ PLATFORM = "linux/amd64"
 STALE_DAYS = 30
 
 _PATH_FLAGS = {"-o", "--output", "-p", "--params"}
+# Flags whose value must be passed through untouched, so it is never mistaken
+# for the PDB path when the flag comes before the file on the command line.
+_VALUE_FLAGS = {
+    "-i", "--cutoff", "-w", "--water", "-s", "--start", "-e", "--end",
+    "-n", "--step", "-t", "--threshold", "--pair-conservation",
+    "--interaction-conservation", "-u", "--unit",
+}
+_CHAIN_FLAGS = {"-c", "--chains"}  # takes two values
 
 
 def _resolve(raw: str) -> Path:
@@ -93,6 +101,15 @@ def main():
             else:
                 container_path = add_mount(host)
             rewritten.append(container_path)
+
+        elif arg in _VALUE_FLAGS and i + 1 < len(args):
+            rewritten.extend([arg, args[i + 1]])
+            i += 1
+
+        elif arg in _CHAIN_FLAGS:
+            take = args[i + 1:i + 3]
+            rewritten.extend([arg, *take])
+            i += len(take)
 
         elif not arg.startswith("-") and not positional_seen:
             positional_seen = True
